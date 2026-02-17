@@ -5,11 +5,13 @@ import { useMemo, useState } from "react";
 import { PageTitle } from "@/components/page-title";
 import { StatusChip } from "@/components/status-chip";
 import { formatDate, formatMoney } from "@/lib/format";
+import { listMockSapMismatch } from "@/lib/mock-assets-service";
 import { getMockManagementTrackingRows, rowsToCsv } from "@/lib/mock-report-service";
 import {
   getMockStocktakeReport,
   getMockStocktakeThreeTabs,
 } from "@/lib/mock-stocktake-service";
+import { listMockTransferDetails } from "@/lib/mock-transfer-service";
 
 function downloadCsv(fileName: string, csvText: string) {
   const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
@@ -67,6 +69,8 @@ export default function ReportsPageView() {
     [plantId, stocktakeYear],
   );
   const managementRows = getMockManagementTrackingRows();
+  const transferHistory = useMemo(() => listMockTransferDetails(), []);
+  const sapMismatchRows = useMemo(() => listMockSapMismatch(), []);
 
   const totalBookValue = useMemo(
     () => report.details.reduce((sum, row) => sum + Number(row.BookValue || 0), 0),
@@ -383,6 +387,188 @@ export default function ReportsPageView() {
               {!managementRows.length ? (
                 <tr>
                   <td colSpan={10}>No management tracking rows.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h3 className="mb-2.5">Transfer History Report (ประวัติการโอนย้าย)</h3>
+        <p className="muted mb-2 text-xs">
+          ตรวจสอบย้อนหลังว่าทรัพย์สินอยู่ที่ไหน ใครเป็นผู้รับโอน และโอนเมื่อใด
+        </p>
+        <div className="chip-list mb-2.5">
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={() =>
+              downloadCsv(
+                `transfer-history-${stocktakeYear}.csv`,
+                rowsToCsv(
+                  transferHistory.flatMap((tr) =>
+                    tr.Items.map((item) => ({
+                      RequestNo: tr.RequestNo,
+                      Status: tr.Status,
+                      AssetNo: item.AssetNo,
+                      AssetName: item.AssetName,
+                      BookValue: item.BookValueAtRequest,
+                      FromCostCenter: tr.FromCostCenter,
+                      ToCostCenter: tr.ToCostCenter,
+                      ToLocation: tr.ToLocation,
+                      ReceiverName: tr.ToOwnerName,
+                      ReceiverEmail: tr.ToOwnerEmail,
+                      Reason: tr.ReasonText,
+                      CreatedBy: tr.CreatedByName,
+                      CreatedAt: tr.CreatedAt,
+                    })),
+                  ),
+                ),
+              )
+            }
+          >
+            Export Transfer History CSV
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Request No</th>
+                <th>Status</th>
+                <th>Asset</th>
+                <th>Book Value</th>
+                <th>From → To</th>
+                <th>Location</th>
+                <th>Receiver</th>
+                <th>Reason</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transferHistory.flatMap((tr) =>
+                tr.Items.map((item) => (
+                  <tr key={`${tr.TransferRequestId}-${item.TransferRequestItemId}`}>
+                    <td>{tr.RequestNo}</td>
+                    <td>
+                      <StatusChip status={tr.Status} />
+                    </td>
+                    <td>
+                      {item.AssetNo} - {item.AssetName}
+                    </td>
+                    <td>{formatMoney(item.BookValueAtRequest)}</td>
+                    <td>
+                      {tr.FromCostCenter} → {tr.ToCostCenter}
+                    </td>
+                    <td>{tr.ToLocation}</td>
+                    <td>
+                      {tr.ToOwnerName}
+                      <p className="muted">{tr.ToOwnerEmail}</p>
+                    </td>
+                    <td>{tr.ReasonText || "-"}</td>
+                    <td>{formatDate(tr.CreatedAt)}</td>
+                  </tr>
+                )),
+              )}
+              {!transferHistory.length ? (
+                <tr>
+                  <td colSpan={9}>No transfer history.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel">
+        <h3 className="mb-2.5">Data Variance Report (ข้อมูล SAP ไม่ตรงระบบ)</h3>
+        <p className="muted mb-2 text-xs">
+          แสดงรายการที่ข้อมูลหน้างานไม่ตรงกับระบบ SAP หรือรายการที่หายไป
+        </p>
+        <div className="chip-list mb-2.5">
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={() =>
+              downloadCsv(
+                `sap-variance-${stocktakeYear}.csv`,
+                rowsToCsv(
+                  sapMismatchRows.map((row) => ({
+                    AssetNo: row.AssetNo,
+                    AssetName: row.AssetName || "",
+                    MismatchType: row.MismatchType,
+                    AssetBookValue: row.AssetBookValue ?? "",
+                    SapBookValue: row.SapBookValue ?? "",
+                    AssetPlant: row.AssetPlantCode || "",
+                    SapPlant: row.SapPlantCode || "",
+                    AssetCostCenter: row.AssetCostCenterCode || "",
+                    SapCostCenter: row.SapCostCenterCode || "",
+                    SapLastSeen: row.SapLastSeenAt || "",
+                  })),
+                ),
+              )
+            }
+          >
+            Export SAP Variance CSV
+          </button>
+        </div>
+        <div className="kpi-grid mb-2.5">
+          <div className="kpi">
+            <h3>Total Mismatch</h3>
+            <p>{sapMismatchRows.length}</p>
+          </div>
+          <div className="kpi">
+            <h3>Missing in SAP</h3>
+            <p>{sapMismatchRows.filter((x) => x.MismatchType === "MISSING_IN_SAP").length}</p>
+          </div>
+          <div className="kpi">
+            <h3>Book Value Mismatch</h3>
+            <p>{sapMismatchRows.filter((x) => x.MismatchType === "BOOKVALUE_MISMATCH").length}</p>
+          </div>
+          <div className="kpi">
+            <h3>Other Mismatch</h3>
+            <p>
+              {sapMismatchRows.filter((x) => !["MISSING_IN_SAP", "BOOKVALUE_MISMATCH"].includes(x.MismatchType)).length}
+            </p>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Asset No</th>
+                <th>Asset Name</th>
+                <th>Mismatch Type</th>
+                <th>eAsset BV</th>
+                <th>SAP BV</th>
+                <th>eAsset Plant</th>
+                <th>SAP Plant</th>
+                <th>eAsset CCA</th>
+                <th>SAP CCA</th>
+                <th>SAP Last Seen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sapMismatchRows.map((row) => (
+                <tr key={`${row.AssetNo}-${row.MismatchType}`}>
+                  <td>{row.AssetNo}</td>
+                  <td>{row.AssetName || "-"}</td>
+                  <td>
+                    <StatusChip status={row.MismatchType} />
+                  </td>
+                  <td>{row.AssetBookValue != null ? formatMoney(row.AssetBookValue) : "-"}</td>
+                  <td>{row.SapBookValue != null ? formatMoney(row.SapBookValue) : "-"}</td>
+                  <td>{row.AssetPlantCode || "-"}</td>
+                  <td>{row.SapPlantCode || "-"}</td>
+                  <td>{row.AssetCostCenterCode || "-"}</td>
+                  <td>{row.SapCostCenterCode || "-"}</td>
+                  <td>{formatDate(row.SapLastSeenAt)}</td>
+                </tr>
+              ))}
+              {!sapMismatchRows.length ? (
+                <tr>
+                  <td colSpan={10}>No SAP variance detected.</td>
                 </tr>
               ) : null}
             </tbody>
